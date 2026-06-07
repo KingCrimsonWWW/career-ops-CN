@@ -1197,3 +1197,130 @@ tracked_companies:
     scan_query: '"n11" careers "Software Engineer" OR "Backend" OR "Frontend" OR "Yazılım"'
     notes: "Istanbul. E-commerce marketplace (Doğuş Group)."
     enabled: false
+
+  # ============================================================
+  # -- 中国市场 / China Market
+  # ============================================================
+  # Chinese tech companies and job platforms for candidates targeting
+  # the Chinese market. Uses the boss-zhipin Provider for BOSS直聘.
+  #
+  # Configuration:
+  #   provider: boss-zhipin — uses the boss-zhipin Provider
+  #   boss_zhipin.query: search keyword
+  #   boss_zhipin.city: BOSS直聘 city code (see config/boss-zhipin.example.yml)
+  #   boss_zhipin.experience: experience level code
+  #   boss_zhipin.salary: salary range code
+  #
+  # For non-BOSS platforms (智联招聘, 前程无忧, 猎聘), use WebSearch or
+  # local parsers until dedicated Providers are available (Phase 3).
+  #
+  # China market notes:
+  #   - Salaries quoted as monthly pre-tax (税前月薪), typically 12-16 months
+  #   - Common benefits: 五险一金 (social insurance + housing fund), 年终奖 (year-end bonus)
+  #   - 大厂 (Big Tech): ByteDance, Alibaba, Tencent, Meituan, JD, Baidu, NetEase
+  #   - 996 culture: increasingly discouraged but still common at some companies
+  #   - Use modes/zh/ for Chinese-language evaluations
+  # ============================================================
+
+  # -- BOSS直聘 keyword searches (using boss-zhipin Provider) --
+
+  - name: "BOSS直聘-前端工程师-北京"
+    provider: boss-zhipin
+    boss_zhipin:
+      query: "前端工程师"
+      city: "101010100"
+      experience: "105"
+      salary: "405"
+    enabled: false
+
+  - name: "BOSS直聘-后端工程师-北京"
+    provider: boss-zhipin
+    boss_zhipin:
+      query: "后端工程师"
+      city: "101010100"
+      experience: "105"
+      salary: "405"
+    enabled: false
+
+  - name: "BOSS直聘-AI工程师-北京"
+    provider: boss-zhipin
+    boss_zhipin:
+      query: "AI工程师"
+      city: "101010100"
+      salary: "405"
+    enabled: false
+
+  - name: "BOSS直聘-AI工程师-上海"
+    provider: boss-zhipin
+    boss_zhipin:
+      query: "AI工程师"
+      city: "101020100"
+      salary: "405"
+    enabled: false
+
+  - name: "BOSS直聘-AI工程师-深圳"
+    provider: boss-zhipin
+    boss_zhipin:
+      query: "AI工程师"
+      city: "101280600"
+      salary: "405"
+    enabled: false
+
+  # -- Chinese tech companies (WebSearch discovery) --
+
+  - name: ByteDance (字节跳动)
+    careers_url: https://jobs.bytedance.com
+    scan_method: websearch
+    scan_query: 'site:jobs.bytedance.com "前端" OR "后端" OR "算法" OR "AI"'
+    notes: "Beijing. TikTok parent company. Large tech org."
+    enabled: false
+
+  - name: Alibaba (阿里巴巴)
+    careers_url: https://talent.alibaba.com
+    scan_method: websearch
+    scan_query: 'site:talent.alibaba.com "工程师" OR "开发" OR "算法"'
+    notes: "Hangzhou. E-commerce & cloud computing giant."
+    enabled: false
+
+  - name: Tencent (腾讯)
+    careers_url: https://careers.tencent.com
+    scan_method: websearch
+    scan_query: 'site:careers.tencent.com "工程师" OR "开发" OR "算法"'
+    notes: "Shenzhen. Gaming, social, fintech conglomerate."
+    enabled: false
+
+  - name: Meituan (美团)
+    careers_url: https://zhaopin.meituan.com
+    scan_method: websearch
+    scan_query: 'site:zhaopin.meituan.com "工程师" OR "开发"'
+    notes: "Beijing. Local services & delivery platform."
+    enabled: false
+
+  - name: JD.com (京东)
+    careers_url: https://zhaopin.jd.com
+    scan_method: websearch
+    scan_query: 'site:zhaopin.jd.com "工程师" OR "开发" OR "算法"'
+    notes: "Beijing. E-commerce & logistics."
+    enabled: false
+
+  # -- Chinese job platform search queries --
+
+  - name: BOSS直聘 — AI Engineer
+    query: 'site:zhipin.com "AI工程师" OR "机器学习工程师" OR "算法工程师" 北京 OR 上海 OR 深圳'
+    enabled: false
+
+  - name: BOSS直聘 — Frontend Engineer
+    query: 'site:zhipin.com "前端工程师" React OR Vue OR TypeScript 北京 OR 上海 OR 深圳'
+    enabled: false
+
+  - name: BOSS直聘 — Backend Engineer
+    query: 'site:zhipin.com "后端工程师" Java OR Go OR Python 北京 OR 上海 OR 深圳'
+    enabled: false
+
+  - name: 拉勾网 — Tech Roles
+    query: 'site:lagou.com "前端" OR "后端" OR "AI" OR "算法" 北京 OR 上海'
+    enabled: false
+
+  - name: 猎聘 — Senior Tech Roles
+    query: 'site:liepin.com "高级工程师" OR "技术专家" OR "架构师" 北京 OR 上海 OR 深圳'
+    enabled: false

@@ -173,6 +173,7 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 - **French (Francophone market):** `modes/fr/` — native French translations with France/Belgium/Switzerland/Luxembourg-specific vocabulary (CDI/CDD, convention collective SYNTEC, RTT, mutuelle, prévoyance, 13e mois, intéressement/participation, titres-restaurant, CSE, portage salarial, etc.). Includes `_shared.md`, `offre.md` (evaluation), `postuler.md` (apply), `pipeline.md`.
 - **Japanese (Japan market):** `modes/ja/` — native Japanese translations with Japan-specific vocabulary (正社員, 業務委託, 賞与, 退職金, みなし残業, 年俸制, 36協定, 通勤手当, 住宅手当, etc.). Includes `_shared.md`, `kyujin.md` (evaluation), `oubo.md` (apply), `pipeline.md`.
 - **Turkish (Turkey market):** `modes/tr/` — native Turkish translations with Turkey-specific vocabulary (SGK, kıdem tazminatı, ihbar süresi, brüt/net maaş, AGİ, BES, yemek kartı, yol yardımı, TÜFE zammı, etc.). Includes `_shared.md`, `is-ilani.md` (evaluation), `basvuru.md` (apply), `pipeline.md`.
+- **Chinese (China market):** `modes/zh/` — Chinese-language modes with China-specific evaluation dimensions (薪资竞争力, 技术栈匹配, 公司规模, 工作生活平衡, 福利待遇). Includes `pinggu.md` (evaluation), `pipeline.md`, `shenqing.md` (apply), `genjin.md` (follow-up). Paired with `boss-zhipin` Provider for BOSS直聘 integration.
 
 **When to use German modes:** If the user is targeting German-language job postings, lives in DACH, or asks for German output. Either:
 1. User says "use German modes" → read from `modes/de/` instead of `modes/`
@@ -194,7 +195,12 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 2. User sets `language.modes_dir: modes/tr` in `config/profile.yml` → always use Turkish modes
 3. You detect a Turkish JD → suggest switching to Turkish modes
 
-**When NOT to:** If the user applies to English-language roles, even at French, German, Japanese, or Turkish companies, use the default English modes — *unless* the user has explicitly requested another mode in this conversation, or `language.modes_dir` is set in `config/profile.yml` (the explicit user preference always wins over JD-language detection).
+**When to use Chinese modes:** If the user is targeting Chinese-language job postings, lives in China, or asks for Chinese output. Either:
+1. User says "use Chinese modes" → read from `modes/zh/` instead of `modes/`
+2. User sets `language.modes_dir: modes/zh` in `config/profile.yml` → always use Chinese modes
+3. You detect a Chinese JD (BOSS直聘, 智联招聘, etc.) → suggest switching to Chinese modes
+
+**When NOT to:** If the user applies to English-language roles, even at French, German, Japanese, Turkish, or Chinese companies, use the default English modes — *unless* the user has explicitly requested another mode in this conversation, or `language.modes_dir` is set in `config/profile.yml` (the explicit user preference always wins over JD-language detection).
 
 ### Skill Modes
 
@@ -212,6 +218,7 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 | Asks about application status | `tracker` |
 | Fills out application form | `apply` |
 | Searches for new offers | `scan` |
+| Scans BOSS直聘 for Chinese market jobs | `boss-scan` |
 | Processes pending URLs | `pipeline` |
 | Batch processes offers | `batch` |
 | Asks about rejection patterns or wants to improve targeting | `patterns` |
