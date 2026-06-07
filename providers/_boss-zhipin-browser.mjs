@@ -19,7 +19,24 @@ import { existsSync } from 'fs';
 import path from 'path';
 
 const STATE_PATH = path.resolve('data/.boss-zhipin-state.json');
+const CHROME_PROFILE_DIR = path.resolve('data/.boss-chrome-profile');
 const BOSS_HOST = 'www.zhipin.com';
+
+/** 查找系统 Chrome 路径 */
+function findChrome() {
+  const candidates = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    (process.env.LOCALAPPDATA || '') + '\\Google\\Chrome\\Application\\chrome.exe',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+  ];
+  for (const p of candidates) {
+    if (p && existsSync(p)) return p;
+  }
+  return null;
+}
 
 // ── 反检测工具 ──────────────────────────────────────────────────
 
@@ -213,7 +230,25 @@ export async function scrapeJobs(entry) {
   let browser;
 
   try {
-    browser = await chromium.launch({ headless: true });
+    // 使用系统 Chrome（与登录脚本共享同一个 profile 目录）
+    const chromePath = findChrome();
+    const launchOpts = { headless: false };  // 非隐身，复用登录态
+    if (chromePath) {
+      launchOpts.executablePath = chromePath;
+      launchOpts.args = [
+        `--user-data-dir=${CHROME_PROFILE_DIR}`,
+        '--disable-blink-features=AutomationControlled',
+        '--headless=new',         // Chrome 原生隐身模式
+        '--disable-gpu',
+        '--no-first-run',
+        '--disable-infobars',
+      ];
+    } else {
+      // 无系统 Chrome，降级到 Playwright Chromium
+      launchOpts.headless = true;
+    }
+
+    browser = await chromium.launch(launchOpts);
 
     const context = await browser.newContext({
       storageState: STATE_PATH,

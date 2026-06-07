@@ -94,14 +94,45 @@ async function doLogin() {
 
   const { chromium } = await import('playwright');
   const readline = await import('readline');
+  const { existsSync } = await import('fs');
 
-  // 必须有头模式，用户需要看到并操作浏览器
+  // 使用系统 Chrome 而非 Playwright 自带 Chromium
+  // BOSS 直聘会检测 Playwright Chromium 特征
+  const CHROME_PATHS = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+  ];
+
+  let executablePath;
+  for (const p of CHROME_PATHS) {
+    if (existsSync(p)) { executablePath = p; break; }
+  }
+
+  if (!executablePath) {
+    console.error('❌ 未找到 Chrome，请安装 Google Chrome 后重试');
+    process.exit(1);
+  }
+
+  console.log(`   使用 Chrome: ${executablePath}`);
+
+  // 用临时用户数据目录，不污染用户本身的 Chrome 配置
+  const tmpDir = path.resolve('data/.boss-chrome-profile');
+
   const browser = await chromium.launch({
     headless: false,
+    executablePath,
+    channel: undefined,  // 不用 Playwright 内置的
     args: [
+      `--user-data-dir=${tmpDir}`,
       '--disable-blink-features=AutomationControlled',
+      '--disable-features=AutomationControlled',
       '--no-first-run',
       '--no-default-browser-check',
+      '--disable-infobars',
+      '--disable-extensions',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-default-apps',
     ],
   });
 
