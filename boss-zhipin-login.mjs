@@ -162,9 +162,12 @@ async function doLogin() {
         // page might be navigating
       }
 
-      // 检查 URL 变化（登录后通常跳转到首页或推荐页）
+      // 检查 URL 变化 — 只有跳转到用户专属页面才算登录成功
+      // 注意：/web/geek/jobs 是搜索页，未登录也能访问，不能作为登录标志
       const currentUrl = page.url();
-      if (currentUrl.includes('/web/geek/') || currentUrl.includes('/recommend')) {
+      if (currentUrl.includes('/web/geek/chat') ||
+          currentUrl.includes('/web/geek/friend') ||
+          currentUrl.includes('/web/geek/recommend')) {
         loggedIn = true;
         break;
       }
