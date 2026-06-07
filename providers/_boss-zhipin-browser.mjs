@@ -217,51 +217,46 @@ const EXTRACT_JOBS_SCRIPT = () => {
  * @returns {Promise<Array<{title: string, url: string, company: string, location: string}>>}
  */
 export async function scrapeJobs(entry) {
-  // 检查登录状态
   if (!existsSync(STATE_PATH)) {
-    throw new Error(
-      'boss-zhipin: 未找到登录状态。请先运行: node boss-zhipin-login.mjs'
-    );
+    throw new Error('boss-zhipin: 未找到登录状态。请先运行: npm run boss:login');
   }
 
   const { chromium } = await import('playwright');
-
   const searchUrl = buildSearchUrl(entry);
-  let browser;
+  let context;
 
   try {
-    // 使用系统 Chrome（与登录脚本共享同一个 profile 目录）
     const chromePath = findChrome();
-    const launchOpts = { headless: false };  // 非隐身，复用登录态
+
     if (chromePath) {
-      launchOpts.executablePath = chromePath;
-      launchOpts.args = [
-        `--user-data-dir=${CHROME_PROFILE_DIR}`,
-        '--disable-blink-features=AutomationControlled',
-        '--headless=new',         // Chrome 原生隐身模式
-        '--disable-gpu',
-        '--no-first-run',
-        '--disable-infobars',
-      ];
+      // 使用系统 Chrome + 共享 profile（与登录脚本相同的目录）
+      context = await chromium.launchPersistentContext(CHROME_PROFILE_DIR, {
+        headless: true,
+        executablePath: chromePath,
+        viewport: randomViewport(),
+        locale: 'zh-CN',
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+          '--disable-infobars',
+        ],
+      });
     } else {
-      // 无系统 Chrome，降级到 Playwright Chromium
-      launchOpts.headless = true;
+      // 无系统 Chrome，降级到 Playwright Chromium + storageState
+      const browser = await chromium.launch({ headless: true });
+      context = await browser.newContext({
+        storageState: STATE_PATH,
+        viewport: randomViewport(),
+        userAgent: randomUA(),
+        locale: 'zh-CN',
+        timezoneId: 'Asia/Shanghai',
+      });
     }
-
-    browser = await chromium.launch(launchOpts);
-
-    const context = await browser.newContext({
-      storageState: STATE_PATH,
-      viewport: randomViewport(),
-      userAgent: randomUA(),
-      locale: 'zh-CN',
-      timezoneId: 'Asia/Shanghai',
-    });
 
     // 注入反检测脚本
     await context.addInitScript(STEALTH_SCRIPT);
 
-    const page = await context.newPage();
+    const page = context.pages()[0] || await context.newPage();
 
     // 访问搜索页面
     await page.goto(searchUrl, {
@@ -320,6 +315,6 @@ export async function scrapeJobs(entry) {
       .filter(j => j.title && j.url);
 
   } finally {
-    if (browser) await browser.close();
+    if (context) await context.close();
   }
 }
