@@ -86,7 +86,7 @@ function buildSearchUrl(entry) {
   const experience = params.experience || '';
   const salary = params.salary || '';
 
-  const url = new URL(`https://${BOSS_HOST}/web/geek/job`);
+  const url = new URL(`https://${BOSS_HOST}/web/geek/jobs`);
   url.searchParams.set('query', query);
   url.searchParams.set('city', city);
   if (experience) url.searchParams.set('experience', experience);
@@ -104,29 +104,62 @@ function buildSearchUrl(entry) {
 const EXTRACT_JOBS_SCRIPT = () => {
   const jobs = [];
 
-  // BOSS 直聘搜索结果的职位卡片
-  const cards = document.querySelectorAll('.job-card-wrapper, .job-list li, [class*="job-card"]');
+  // BOSS 直聘搜索结果的职位卡片 — 多种选择器适配不同版本
+  const SELECTORS = [
+    '.job-card-wrapper',
+    '.job-list li',
+    '[class*="job-card"]',
+    '[class*="search-job-result"] li',
+    '[ka="search_list_job"]',          // BOSS 直聘 data-ka 属性
+    '.search-job-result .job-list li',
+  ];
+
+  let cards = [];
+  for (const sel of SELECTORS) {
+    cards = document.querySelectorAll(sel);
+    if (cards.length > 0) break;
+  }
+
+  // 如果所有选择器都没命中，尝试通用方案：找所有含 /job_detail/ 链接的容器
+  if (cards.length === 0) {
+    const allLinks = document.querySelectorAll('a[href*="/job_detail/"]');
+    const containers = new Set();
+    for (const link of allLinks) {
+      // 向上找最近的列表项或卡片容器
+      const parent = link.closest('li, [class*="card"], [class*="item"], [class*="job"]');
+      if (parent) containers.add(parent);
+    }
+    cards = Array.from(containers);
+  }
 
   for (const card of cards) {
     try {
-      // 职位名称
-      const titleEl = card.querySelector('.job-name, [class*="job-name"], [class*="job-title"]');
+      // 职位名称 — 多种选择器
+      const titleEl = card.querySelector(
+        '.job-name, [class*="job-name"], [class*="job-title"], [class*="title"] a'
+      );
       const title = titleEl?.textContent?.trim() || '';
 
       // 公司名称
-      const companyEl = card.querySelector('.company-name a, .company-name, [class*="company-name"]');
+      const companyEl = card.querySelector(
+        '.company-name a, .company-name, [class*="company-name"], [class*="company"] a'
+      );
       const company = companyEl?.textContent?.trim() || '';
 
       // 地区
-      const areaEl = card.querySelector('.job-area, .job-area-wrapper, [class*="job-area"]');
+      const areaEl = card.querySelector(
+        '.job-area, .job-area-wrapper, [class*="job-area"], [class*="area"]'
+      );
       const location = areaEl?.textContent?.trim() || '';
 
       // 薪资
       const salaryEl = card.querySelector('.salary, [class*="salary"]');
       const salary = salaryEl?.textContent?.trim() || '';
 
-      // 职位链接
-      const linkEl = card.querySelector('a[href*="/job_detail/"], a[ka*="job"]');
+      // 职位链接 — 优先找 /job_detail/ 链接
+      const linkEl = card.querySelector('a[href*="/job_detail/"]') ||
+                     card.querySelector('a[ka*="job"]') ||
+                     card.querySelector('a');
       let url = '';
       if (linkEl) {
         const href = linkEl.getAttribute('href') || '';
@@ -138,11 +171,13 @@ const EXTRACT_JOBS_SCRIPT = () => {
       }
 
       // 技能标签
-      const tagEls = card.querySelectorAll('.tag-list span, [class*="tag-list"] span, .job-tags span');
+      const tagEls = card.querySelectorAll(
+        '.tag-list span, [class*="tag-list"] span, .job-tags span, [class*="skill"] span'
+      );
       const skills = Array.from(tagEls).map(el => el.textContent?.trim()).filter(Boolean);
 
       // Boss 信息
-      const bossEl = card.querySelector('.info-public, [class*="boss-info"]');
+      const bossEl = card.querySelector('.info-public, [class*="boss-info"], [class*="info-user"]');
       const bossTitle = bossEl?.textContent?.trim() || '';
 
       if (title && url) {

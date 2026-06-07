@@ -2,9 +2,11 @@
 /** @typedef {import('./_types.js').Provider} Provider */
 
 // BOSS直聘 (Boss Zhipin) provider — fetches job listings from the BOSS直聘
-// platform. Two-layer fetch strategy:
-//   1. Fast path: direct HTTP API call (may fail due to anti-bot)
-//   2. Fallback: Playwright browser scraping (requires login state)
+// platform. Browser-first strategy for stable scraping:
+//   1. Primary: Playwright browser scraping (stable, bypasses anti-bot)
+//   2. Fallback: direct HTTP API call (fast but often blocked)
+//
+// First-time setup: run `node boss-zhipin-login.mjs` to authenticate.
 //
 // First-time setup: run `node boss-zhipin-login.mjs` to authenticate.
 //
@@ -138,10 +140,27 @@ export default {
   },
 
   async fetch(entry, ctx) {
+    // ── 主路径：Playwright 浏览器抓取（稳定，绕过反爬）──────────────
+    try {
+      const { scrapeJobs } = await import('./_boss-zhipin-browser.mjs');
+      const jobs = await scrapeJobs(entry);
+      if (jobs.length > 0) return jobs;
+      console.warn(`boss-zhipin: browser returned 0 jobs for "${entry.name}", trying API fallback...`);
+    } catch (browserErr) {
+      const msg = browserErr.message || String(browserErr);
+      if (msg.includes('未找到登录状态')) {
+        throw new Error(
+          `boss-zhipin: 请先登录:\n  npm run boss:login`
+        );
+      }
+      console.warn(`boss-zhipin: browser failed for "${entry.name}": ${msg}`);
+      console.warn('boss-zhipin: trying API fallback...');
+    }
+
+    // ── 备用路径：HTTP API ──────────────────────────────────────
     const apiUrl = buildApiUrl(entry);
     assertAllowedUrl(apiUrl);
 
-    // ── 快速路径：HTTP API ──────────────────────────────────────
     try {
       const json = await ctx.fetchJson(apiUrl, {
         redirect: 'error',
@@ -161,29 +180,10 @@ export default {
           .map(j => normalizeJob(j, entry))
           .filter(j => j.title && j.url);
       }
-
-      // API 返回空列表，降级到浏览器
-      console.warn(`boss-zhipin: API returned empty list for "${entry.name}", trying browser...`);
-    } catch (apiErr) {
-      console.warn(`boss-zhipin: API failed for "${entry.name}": ${apiErr.message}`);
-      console.warn('boss-zhipin: falling back to browser scraping...');
+    } catch {
+      // API also failed
     }
 
-    // ── 备用路径：Playwright 浏览器抓取 ─────────────────────────
-    try {
-      const { scrapeJobs } = await import('./boss-zhipin-browser.mjs');
-      return await scrapeJobs(entry);
-    } catch (browserErr) {
-      // 如果浏览器也失败了，给出清晰的错误信息
-      const msg = browserErr.message || String(browserErr);
-      if (msg.includes('未找到登录状态')) {
-        throw new Error(
-          `boss-zhipin: API 和浏览器都失败了。请先登录:\n  node boss-zhipin-login.mjs\n原始错误: ${msg}`
-        );
-      }
-      throw new Error(
-        `boss-zhipin: API 和浏览器都失败了。${msg}`
-      );
-    }
+    return [];
   },
 };
