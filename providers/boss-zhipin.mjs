@@ -2,7 +2,11 @@
 /** @typedef {import('./_types.js').Provider} Provider */
 
 // BOSS直聘 (Boss Zhipin) provider — fetches job listings from the BOSS直聘
-// public web API. BOSS直聘 is one of China's largest recruitment platforms.
+// platform. Two-layer fetch strategy:
+//   1. Fast path: direct HTTP API call (may fail due to anti-bot)
+//   2. Fallback: Playwright browser scraping (requires login state)
+//
+// First-time setup: run `node boss-zhipin-login.mjs` to authenticate.
 //
 // Configuration via portals.yml:
 //   provider: boss-zhipin
@@ -137,9 +141,9 @@ export default {
     const apiUrl = buildApiUrl(entry);
     assertAllowedUrl(apiUrl);
 
-    let json;
+    // ── 快速路径：HTTP API ──────────────────────────────────────
     try {
-      json = await ctx.fetchJson(apiUrl, {
+      const json = await ctx.fetchJson(apiUrl, {
         redirect: 'error',
         headers: {
           'Accept': 'application/json',
@@ -147,27 +151,39 @@ export default {
         },
         timeoutMs: 15_000,
       });
-    } catch (err) {
-      // If the API call fails (e.g., anti-bot detection, rate limit),
-      // throw with a clear message so the scanner can log it
-      throw new Error(`boss-zhipin: API request failed for "${entry.name}": ${err.message}`);
+
+      const jobList = json?.zpData?.jobList
+        || json?.data?.jobList
+        || (Array.isArray(json) ? json : []);
+
+      if (Array.isArray(jobList) && jobList.length > 0) {
+        return jobList
+          .map(j => normalizeJob(j, entry))
+          .filter(j => j.title && j.url);
+      }
+
+      // API 返回空列表，降级到浏览器
+      console.warn(`boss-zhipin: API returned empty list for "${entry.name}", trying browser...`);
+    } catch (apiErr) {
+      console.warn(`boss-zhipin: API failed for "${entry.name}": ${apiErr.message}`);
+      console.warn('boss-zhipin: falling back to browser scraping...');
     }
 
-    // BOSS直聘 API returns { code: 0, message: "Success", zpData: { jobList: [...] } }
-    // Handle various response shapes gracefully
-    const jobList = json?.zpData?.jobList
-      || json?.data?.jobList
-      || (Array.isArray(json) ? json : []);
-
-    if (!Array.isArray(jobList)) {
+    // ── 备用路径：Playwright 浏览器抓取 ─────────────────────────
+    try {
+      const { scrapeJobs } = await import('./boss-zhipin-browser.mjs');
+      return await scrapeJobs(entry);
+    } catch (browserErr) {
+      // 如果浏览器也失败了，给出清晰的错误信息
+      const msg = browserErr.message || String(browserErr);
+      if (msg.includes('未找到登录状态')) {
+        throw new Error(
+          `boss-zhipin: API 和浏览器都失败了。请先登录:\n  node boss-zhipin-login.mjs\n原始错误: ${msg}`
+        );
+      }
       throw new Error(
-        `boss-zhipin: unexpected response format for "${entry.name}" — ` +
-        `code: ${json?.code}, message: ${json?.message || 'unknown'}`
+        `boss-zhipin: API 和浏览器都失败了。${msg}`
       );
     }
-
-    return jobList
-      .map(j => normalizeJob(j, entry))
-      .filter(j => j.title && j.url); // must have title and URL
   },
 };
