@@ -1,100 +1,28 @@
 // @ts-check
 /**
- * boss-zhipin-browser.mjs — Playwright 浏览器抓取模块
+ * _boss-zhipin-browser.mjs — Puppeteer + stealth 浏览器抓取模块
  *
- * 使用真浏览器访问 BOSS 直聘搜索页面，解析 DOM 提取职位列表。
- * 绕过 BOSS 直聘的 API 反爬机制。
- *
- * 前置条件：需要先运行 `node boss-zhipin-login.mjs` 完成登录。
- *
- * 反检测措施：
- *   - viewport 随机化
- *   - User-Agent 随机化
- *   - 操作间随机延迟
- *   - 隐藏 webdriver 标志
- *   - 串行页面访问（不并行）
+ * 完全复制 GeekGeekRun 的方式：
+ *   1. puppeteer-extra + stealth + anonymize-ua 插件
+ *   2. 加载保存的 Cookie（不需要每次登录）
+ *   3. 直接读取 Vue 内部状态（__vue__.jobList），不解析 DOM
  */
 
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 
-const STATE_PATH = path.resolve('data/.boss-zhipin-state.json');
-const CHROME_PROFILE_DIR = path.resolve('data/.boss-chrome-profile');
+const COOKIES_PATH = path.resolve('data/.boss-cookies.json');
+const LOCAL_STORAGE_PATH = path.resolve('data/.boss-local-storage.json');
 const BOSS_HOST = 'www.zhipin.com';
 
-/** 查找系统 Chrome 路径 */
-function findChrome() {
-  const candidates = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    (process.env.LOCALAPPDATA || '') + '\\Google\\Chrome\\Application\\chrome.exe',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-  ];
-  for (const p of candidates) {
-    if (p && existsSync(p)) return p;
-  }
-  return null;
+/** 随机延迟 */
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function sleepWithRandomDelay(baseMs = 1000) {
+  return sleep(baseMs + Math.floor(Math.random() * 2000));
 }
-
-// ── 反检测工具 ──────────────────────────────────────────────────
-
-/** 随机延迟（模拟人类操作） */
-function randomDelay(minMs = 1000, maxMs = 3000) {
-  const ms = Math.floor(Math.random() * (maxMs - minMs)) + minMs;
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/** 随机 viewport 尺寸 */
-function randomViewport() {
-  const widths = [1280, 1366, 1440, 1536, 1600, 1680, 1920];
-  const heights = [720, 768, 800, 864, 900, 960, 1080];
-  return {
-    width: widths[Math.floor(Math.random() * widths.length)],
-    height: heights[Math.floor(Math.random() * heights.length)],
-  };
-}
-
-/** 随机 Chrome User-Agent */
-function randomUA() {
-  const versions = ['124', '125', '126', '127', '128', '129', '130'];
-  const version = versions[Math.floor(Math.random() * versions.length)];
-  return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version}.0.0.0 Safari/537.36`;
-}
-
-// ── 反检测注入脚本 ──────────────────────────────────────────────
-
-const STEALTH_SCRIPT = () => {
-  // 隐藏 webdriver 标志
-  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-
-  // 隐藏 Playwright 特征
-  delete window.__playwright;
-  delete window.__pw_manual;
-
-  // 修改 navigator.plugins（空列表是自动化特征）
-  Object.defineProperty(navigator, 'plugins', {
-    get: () => [1, 2, 3, 4, 5],
-  });
-
-  // 修改 navigator.languages
-  Object.defineProperty(navigator, 'languages', {
-    get: () => ['zh-CN', 'zh', 'en-US', 'en'],
-  });
-
-  // 隐藏 Chrome 自动化特征
-  if (window.chrome) {
-    window.chrome.runtime = {};
-  }
-};
-
-// ── 构建搜索 URL ────────────────────────────────────────────────
 
 /**
  * 从 entry 配置构建 BOSS 直聘搜索页面 URL
- * @param {object} entry - portals.yml 中的条目
- * @returns {string} 搜索页面 URL
  */
 function buildSearchUrl(entry) {
   const params = entry.boss_zhipin || {};
@@ -105,216 +33,171 @@ function buildSearchUrl(entry) {
 
   const url = new URL(`https://${BOSS_HOST}/web/geek/jobs`);
   url.searchParams.set('query', query);
-  url.searchParams.set('city', city);
+  if (city) url.searchParams.set('city', city);
   if (experience) url.searchParams.set('experience', experience);
   if (salary) url.searchParams.set('salary', salary);
 
   return url.toString();
 }
 
-// ── DOM 解析 ────────────────────────────────────────────────────
-
 /**
- * 从 BOSS 直聘搜索结果页解析职位列表
- * 使用 page.evaluate() 在浏览器上下文中执行
- */
-const EXTRACT_JOBS_SCRIPT = () => {
-  const jobs = [];
-
-  // BOSS 直聘搜索结果的职位卡片 — 多种选择器适配不同版本
-  const SELECTORS = [
-    '.job-card-wrapper',
-    '.job-list li',
-    '[class*="job-card"]',
-    '[class*="search-job-result"] li',
-    '[ka="search_list_job"]',          // BOSS 直聘 data-ka 属性
-    '.search-job-result .job-list li',
-  ];
-
-  let cards = [];
-  for (const sel of SELECTORS) {
-    cards = document.querySelectorAll(sel);
-    if (cards.length > 0) break;
-  }
-
-  // 如果所有选择器都没命中，尝试通用方案：找所有含 /job_detail/ 链接的容器
-  if (cards.length === 0) {
-    const allLinks = document.querySelectorAll('a[href*="/job_detail/"]');
-    const containers = new Set();
-    for (const link of allLinks) {
-      // 向上找最近的列表项或卡片容器
-      const parent = link.closest('li, [class*="card"], [class*="item"], [class*="job"]');
-      if (parent) containers.add(parent);
-    }
-    cards = Array.from(containers);
-  }
-
-  for (const card of cards) {
-    try {
-      // 职位名称 — 多种选择器
-      const titleEl = card.querySelector(
-        '.job-name, [class*="job-name"], [class*="job-title"], [class*="title"] a'
-      );
-      const title = titleEl?.textContent?.trim() || '';
-
-      // 公司名称
-      const companyEl = card.querySelector(
-        '.company-name a, .company-name, [class*="company-name"], [class*="company"] a'
-      );
-      const company = companyEl?.textContent?.trim() || '';
-
-      // 地区
-      const areaEl = card.querySelector(
-        '.job-area, .job-area-wrapper, [class*="job-area"], [class*="area"]'
-      );
-      const location = areaEl?.textContent?.trim() || '';
-
-      // 薪资
-      const salaryEl = card.querySelector('.salary, [class*="salary"]');
-      const salary = salaryEl?.textContent?.trim() || '';
-
-      // 职位链接 — 优先找 /job_detail/ 链接
-      const linkEl = card.querySelector('a[href*="/job_detail/"]') ||
-                     card.querySelector('a[ka*="job"]') ||
-                     card.querySelector('a');
-      let url = '';
-      if (linkEl) {
-        const href = linkEl.getAttribute('href') || '';
-        if (href.startsWith('http')) {
-          url = href;
-        } else if (href.startsWith('/')) {
-          url = `https://www.zhipin.com${href}`;
-        }
-      }
-
-      // 技能标签
-      const tagEls = card.querySelectorAll(
-        '.tag-list span, [class*="tag-list"] span, .job-tags span, [class*="skill"] span'
-      );
-      const skills = Array.from(tagEls).map(el => el.textContent?.trim()).filter(Boolean);
-
-      // Boss 信息
-      const bossEl = card.querySelector('.info-public, [class*="boss-info"], [class*="info-user"]');
-      const bossTitle = bossEl?.textContent?.trim() || '';
-
-      if (title && url) {
-        jobs.push({ title, company, location, salary, url, skills, bossTitle });
-      }
-    } catch {
-      // skip malformed card
-    }
-  }
-
-  return jobs;
-};
-
-// ── 主抓取函数 ──────────────────────────────────────────────────
-
-/**
- * 使用 Playwright 浏览器抓取 BOSS 直聘职位列表
+ * 使用 puppeteer-extra + stealth 抓取 BOSS 直聘职位列表
  *
  * @param {object} entry - portals.yml 中的条目
  * @returns {Promise<Array<{title: string, url: string, company: string, location: string}>>}
  */
 export async function scrapeJobs(entry) {
-  if (!existsSync(STATE_PATH)) {
-    throw new Error('boss-zhipin: 未找到登录状态。请先运行: npm run boss:login');
+  if (!existsSync(COOKIES_PATH)) {
+    throw new Error('boss-zhipin: 未找到 Cookie。请先运行: npm run boss:login');
   }
 
-  const { chromium } = await import('playwright');
-  const searchUrl = buildSearchUrl(entry);
-  let context;
+  // 初始化 puppeteer-extra（与 GeekGeekRun 相同）
+  const puppeteer = (await import('puppeteer-extra')).default;
+  const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+  const AnonymizeUaPlugin = (await import('puppeteer-extra-plugin-anonymize-ua')).default;
+
+  puppeteer.use(StealthPlugin());
+  puppeteer.use(AnonymizeUaPlugin({ makeWindows: false }));
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    ignoreHTTPSErrors: true,
+    defaultViewport: { width: 1440, height: 900 },
+  });
 
   try {
-    const chromePath = findChrome();
+    const page = (await browser.pages())[0];
 
-    if (chromePath) {
-      // 使用系统 Chrome + 共享 profile（与登录脚本相同的目录）
-      context = await chromium.launchPersistentContext(CHROME_PROFILE_DIR, {
-        headless: true,
-        executablePath: chromePath,
-        viewport: randomViewport(),
-        locale: 'zh-CN',
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--no-first-run',
-          '--disable-infobars',
-        ],
-      });
-    } else {
-      // 无系统 Chrome，降级到 Playwright Chromium + storageState
-      const browser = await chromium.launch({ headless: true });
-      context = await browser.newContext({
-        storageState: STATE_PATH,
-        viewport: randomViewport(),
-        userAgent: randomUA(),
-        locale: 'zh-CN',
-        timezoneId: 'Asia/Shanghai',
-      });
+    // 加载保存的 Cookie
+    const cookies = JSON.parse(readFileSync(COOKIES_PATH, 'utf-8'));
+    for (const c of cookies) {
+      if (Object.hasOwn(c, 'sameSite')) c.sameSite = 'unspecified';
+      await page.setCookie(c);
     }
 
-    // 注入反检测脚本
-    await context.addInitScript(STEALTH_SCRIPT);
-
-    const page = context.pages()[0] || await context.newPage();
+    // 加载 localStorage
+    if (existsSync(LOCAL_STORAGE_PATH)) {
+      const lsData = readFileSync(LOCAL_STORAGE_PATH, 'utf-8');
+      await page.goto(`https://${BOSS_HOST}/desktop/`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000,
+      });
+      await page.evaluate((data) => {
+        const parsed = JSON.parse(data);
+        for (const [key, value] of Object.entries(parsed)) {
+          window.localStorage.setItem(key, value);
+        }
+      }, lsData);
+    }
 
     // 访问搜索页面
-    await page.goto(searchUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 20_000,
-    });
+    const searchUrl = buildSearchUrl(entry);
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
 
-    // 等待页面加载（职位列表出现）
-    try {
-      await page.waitForSelector('.job-card-wrapper, .job-list li, [class*="job-card"]', {
-        timeout: 10_000,
-      });
-    } catch {
-      // 选择器没找到，可能页面结构变了，或者被反爬了
-      // 尝试等待更通用的选择器
-      await page.waitForTimeout(5000);
-    }
-
-    // 随机延迟（模拟人类浏览）
-    await randomDelay(1500, 3500);
-
-    // 滚动页面以触发懒加载
-    await page.evaluate(() => window.scrollBy(0, 500));
-    await randomDelay(500, 1500);
+    // 等待页面完全加载
+    await sleep(3000);
+    await page.waitForFunction(() => document.readyState === 'complete', { timeout: 15000 });
 
     // 检查是否被重定向到登录页
     const currentUrl = page.url();
     if (currentUrl.includes('/login') || currentUrl.includes('/signin')) {
-      throw new Error(
-        'boss-zhipin: 登录状态已过期。请重新运行: node boss-zhipin-login.mjs'
+      throw new Error('boss-zhipin: 登录态已过期，请重新运行: npm run boss:login');
+    }
+
+    // 等待职位列表加载
+    try {
+      await page.waitForSelector('.job-list-container, .rec-job-list, .job-recommend-result', {
+        timeout: 10000,
+      });
+    } catch {
+      // 可能页面结构变了，继续尝试读取 Vue 数据
+    }
+
+    await sleepWithRandomDelay(2000);
+
+    // ── 核心：直接读取 Vue 内部状态（与 GeekGeekRun 相同）──
+    const jobListData = await page.evaluate(() => {
+      // 方式 1：从 .page-jobs-main 的 Vue 实例读取
+      const mainEl = document.querySelector('.page-jobs-main');
+      if (mainEl?.__vue__?.jobList) {
+        return mainEl.__vue__.jobList;
+      }
+
+      // 方式 2：从 .search-job-result 的 Vue 实例读取
+      const searchEl = document.querySelector('.search-job-result');
+      if (searchEl?.__vue__?.jobList) {
+        return searchEl.__vue__.jobList;
+      }
+
+      // 方式 3：遍历所有元素找 Vue 实例
+      const allEls = document.querySelectorAll('*');
+      for (const el of allEls) {
+        if (el.__vue__?.jobList?.length > 0) {
+          return el.__vue__.jobList;
+        }
+      }
+
+      return null;
+    });
+
+    if (jobListData && jobListData.length > 0) {
+      // 直接从 Vue 数据构建 Job 列表（最可靠的方式）
+      return jobListData
+        .filter(j => j.jobName && j.encryptJobId)
+        .map(j => {
+          const city = j.cityName || '';
+          const area = j.areaDistrict || '';
+          return {
+            title: j.jobName,
+            url: `https://${BOSS_HOST}/job_detail/${j.encryptJobId}.html`,
+            company: j.brandName || entry.name || '',
+            location: [city, area].filter(Boolean).join(' '),
+            _meta: {
+              salary: j.salaryDesc || '',
+              experience: j.jobExperience || '',
+              degree: j.jobDegree || '',
+              skills: (j.skills || []).join(', '),
+              bossTitle: j.bossTitle || '',
+              bossOnline: j.bossOnline || false,
+            },
+          };
+        });
+    }
+
+    // ── 备用：从 DOM 解析 ──
+    console.warn('boss-zhipin: Vue 数据不可用，尝试 DOM 解析...');
+    const domJobs = await page.evaluate(() => {
+      const jobs = [];
+      const cards = document.querySelectorAll(
+        '.job-card-wrapper, .rec-job-list li, [class*="job-card"]'
       );
-    }
 
-    // 提取职位数据
-    const rawJobs = await page.evaluate(EXTRACT_JOBS_SCRIPT);
+      for (const card of cards) {
+        try {
+          const titleEl = card.querySelector('.job-name, [class*="job-name"]');
+          const companyEl = card.querySelector('.company-name a, .company-name');
+          const areaEl = card.querySelector('.job-area, [class*="job-area"]');
+          const salaryEl = card.querySelector('.salary, [class*="salary"]');
+          const linkEl = card.querySelector('a[href*="/job_detail/"]');
 
-    if (!Array.isArray(rawJobs) || rawJobs.length === 0) {
-      // 尝试备用方案：拦截 XHR 响应
-      console.warn('boss-zhipin: DOM 解析未获取到职位，可能需要更新选择器');
-      return [];
-    }
+          const title = titleEl?.textContent?.trim() || '';
+          const company = companyEl?.textContent?.trim() || '';
+          const location = areaEl?.textContent?.trim() || '';
+          const salary = salaryEl?.textContent?.trim() || '';
+          let url = '';
+          if (linkEl) {
+            const href = linkEl.getAttribute('href') || '';
+            url = href.startsWith('http') ? href : `https://www.zhipin.com${href}`;
+          }
 
-    // 规范化为 Career-Ops Job 格式
-    return rawJobs
-      .map(j => ({
-        title: j.title,
-        url: j.url,
-        company: j.company || entry.name || '',
-        location: j.location || '',
-        _meta: {
-          salary: j.salary || '',
-          skills: (j.skills || []).join(', '),
-          bossTitle: j.bossTitle || '',
-        },
-      }))
-      .filter(j => j.title && j.url);
+          if (title && url) jobs.push({ title, company, location, salary, url });
+        } catch { /* skip */ }
+      }
+      return jobs;
+    });
 
+    return domJobs || [];
   } finally {
-    if (context) await context.close();
+    await browser.close();
   }
 }
