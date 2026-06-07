@@ -1,15 +1,15 @@
-# Career-Ops
+# Career-Ops-CN
 
-[English](README.md) | [Español](README.es.md) | [Português (Brasil)](README.pt-BR.md) | [한국어](README.ko-KR.md) | [日本語](README.ja.md) | [简体中文](README.cn.md) | [繁體中文](README.zh-TW.md) | [Українська](README.ua.md) | [Русский](README.ru.md)
+[English](README.md) | [简体中文](README.cn.md)
 
 <p align="center">
-  <a href="https://x.com/santifer"><img src="docs/hero-banner.jpg" alt="Career-Ops Multi-Agent Job Search System" width="800"></a>
+  <a href="https://github.com/KingCrimsonWWW/career-ops-CN"><img src="docs/hero-banner.jpg" alt="Career-Ops-CN Multi-Agent Job Search System" width="800"></a>
 </p>
 
 <p align="center">
-  <em>I spent months applying to jobs the hard way. So I engineered the system I wish I had.</em><br>
-  Companies use AI to filter candidates. <strong>I just gave candidates AI to <em>choose</em> companies.</strong><br>
-  <em>Now it's open source.</em>
+  <em>Based on Career-Ops, enhanced for the Chinese recruitment market.</em><br>
+  <strong>BOSS直聘 integration · Chinese evaluation modes · China market knowledge</strong><br>
+  <em>Upstream: <a href="https://github.com/santifer/career-ops">santifer/career-ops</a></em>
 </p>
 
 <p align="center">
