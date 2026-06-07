@@ -84,17 +84,16 @@ async function doLogin() {
   console.log('🚀 BOSS直聘登录助手');
   console.log('');
   console.log('即将打开浏览器，请完成以下步骤：');
-  console.log('  1. 在浏览器中打开 BOSS 直聘');
-  console.log('  2. 使用手机号或扫码登录');
-  console.log('  3. 登录成功后脚本会自动检测并保存状态');
-  console.log('');
-  console.log(`⏱️  超时时间: ${LOGIN_TIMEOUT_MS / 1000} 秒`);
+  console.log('  1. 在浏览器中登录 BOSS 直聘（扫码或手机号）');
+  console.log('  2. 确认页面显示你的头像或"我的简历"');
+  console.log('  3. 回到终端，按 Enter 保存登录状态');
   console.log('');
 
   // 确保 data 目录存在
   mkdirSync('data', { recursive: true });
 
   const { chromium } = await import('playwright');
+  const readline = await import('readline');
 
   // 必须有头模式，用户需要看到并操作浏览器
   const browser = await chromium.launch({
@@ -116,9 +115,7 @@ async function doLogin() {
 
     // 注入反检测脚本
     await page.addInitScript(() => {
-      // 隐藏 webdriver 标志
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      // 隐藏 Playwright 特征
       delete window.__playwright;
       delete window.__pw_manual;
     });
@@ -126,70 +123,28 @@ async function doLogin() {
     console.log('📍 正在打开 BOSS 直聘...');
     await page.goto(BOSS_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 
-    console.log('⏳ 等待登录完成...');
-    console.log('   (检测到登录成功后会自动保存)');
+    console.log('');
+    console.log('✅ 浏览器已打开，请登录 BOSS 直聘');
+    console.log('');
 
-    // 轮询检测登录状态
-    const startTime = Date.now();
-    let loggedIn = false;
+    // 等待用户在终端按 Enter
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    await new Promise(resolve => {
+      rl.question('   登录完成后，回到这里按 Enter → ', () => {
+        rl.close();
+        resolve();
+      });
+    });
 
-    while (Date.now() - startTime < LOGIN_TIMEOUT_MS) {
-      await page.waitForTimeout(2000);
+    // 保存登录状态
+    await context.storageState({ path: STATE_PATH });
+    console.log('');
+    console.log('✅ 登录状态已保存到:');
+    console.log(`   ${STATE_PATH}`);
+    console.log('');
+    console.log('现在可以运行扫描:');
+    console.log('   node scan.mjs --company "BOSS直聘"');
 
-      // 检查登录标志
-      for (const selector of LOGIN_SUCCESS_SELECTORS) {
-        try {
-          const el = await page.$(selector);
-          if (el) {
-            loggedIn = true;
-            break;
-          }
-        } catch {
-          // continue
-        }
-      }
-
-      if (loggedIn) break;
-
-      // 也检查页面文本
-      try {
-        const bodyText = await page.evaluate(() => document.body?.innerText || '');
-        if (bodyText.includes('我的简历') || bodyText.includes('在线') || bodyText.includes('退出')) {
-          loggedIn = true;
-          break;
-        }
-      } catch {
-        // page might be navigating
-      }
-
-      // 检查 URL 变化 — 只有跳转到用户专属页面才算登录成功
-      // 注意：/web/geek/jobs 是搜索页，未登录也能访问，不能作为登录标志
-      const currentUrl = page.url();
-      if (currentUrl.includes('/web/geek/chat') ||
-          currentUrl.includes('/web/geek/friend') ||
-          currentUrl.includes('/web/geek/recommend')) {
-        loggedIn = true;
-        break;
-      }
-    }
-
-    if (loggedIn) {
-      // 等待一下确保页面完全加载
-      await page.waitForTimeout(2000);
-
-      // 保存登录状态
-      await context.storageState({ path: STATE_PATH });
-      console.log('');
-      console.log('✅ 登录成功！状态已保存到:');
-      console.log(`   ${STATE_PATH}`);
-      console.log('');
-      console.log('现在可以运行扫描:');
-      console.log('   node scan.mjs --company "BOSS直聘"');
-    } else {
-      console.log('');
-      console.log('❌ 登录超时，请重试');
-      process.exit(1);
-    }
   } finally {
     await browser.close();
   }
