@@ -62,9 +62,10 @@ export async function scrapeJobs(entry) {
   puppeteer.use(AnonymizeUaPlugin({ makeWindows: false }));
 
   const browser = await puppeteer.launch({
-    headless: true,
-    ignoreHTTPSErrors: true,
-    defaultViewport: { width: 1440, height: 900 },
+    headless: false,  // 必须有头模式
+    pipe: true,       // GeekGeekRun 使用 pipe
+    defaultViewport: null,
+    args: ['--window-size=1440,900'],
   });
 
   try {
@@ -104,6 +105,36 @@ export async function scrapeJobs(entry) {
     const currentUrl = page.url();
     if (currentUrl.includes('/login') || currentUrl.includes('/signin')) {
       throw new Error('boss-zhipin: 登录态已过期，请重新运行: npm run boss:login');
+    }
+
+    // 检查是否遇到验证码（极验 GeeTest）
+    if (currentUrl.includes('verify') || currentUrl.includes('security-check')) {
+      console.log('');
+      console.log('⚠️  BOSS 直聘要求验证，请在浏览器中完成验证');
+      console.log('   验证完成后页面会自动跳转，脚本将继续运行');
+      console.log('');
+
+      // 等待验证完成（URL 不再包含 verify）
+      const verifyStart = Date.now();
+      const VERIFY_TIMEOUT = 120_000; // 2 分钟
+      while (Date.now() - verifyStart < VERIFY_TIMEOUT) {
+        await sleep(2000);
+        const newUrl = page.url();
+        if (!newUrl.includes('verify') && !newUrl.includes('security-check')) {
+          console.log('✅ 验证完成');
+          break;
+        }
+      }
+
+      // 验证超时
+      if (page.url().includes('verify')) {
+        throw new Error('boss-zhipin: 验证超时，请重试');
+      }
+
+      // 验证后可能需要重新导航到搜索页
+      await sleep(2000);
+      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await sleep(3000);
     }
 
     // 等待职位列表加载
