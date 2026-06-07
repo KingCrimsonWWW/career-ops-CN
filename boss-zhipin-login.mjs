@@ -22,8 +22,10 @@ async function initPuppeteer() {
   const puppeteer = (await import('puppeteer-extra')).default;
   const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
   const AnonymizeUaPlugin = (await import('puppeteer-extra-plugin-anonymize-ua')).default;
+  const LaodengPlugin = (await import('@geekgeekrun/puppeteer-extra-plugin-laodeng')).default;
 
   puppeteer.use(StealthPlugin());
+  puppeteer.use(LaodengPlugin());
   puppeteer.use(AnonymizeUaPlugin({ makeWindows: false }));
 
   return puppeteer;

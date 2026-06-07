@@ -51,12 +51,14 @@ export async function scrapeJobs(entry) {
     throw new Error('boss-zhipin: 未找到 Cookie。请先运行: npm run boss:login');
   }
 
-  // 初始化 puppeteer-extra（与 GeekGeekRun 相同）
+  // 初始化 puppeteer-extra（与 GeekGeekRun 完全相同）
   const puppeteer = (await import('puppeteer-extra')).default;
   const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
   const AnonymizeUaPlugin = (await import('puppeteer-extra-plugin-anonymize-ua')).default;
+  const LaodengPlugin = (await import('@geekgeekrun/puppeteer-extra-plugin-laodeng')).default;
 
   puppeteer.use(StealthPlugin());
+  puppeteer.use(LaodengPlugin());
   puppeteer.use(AnonymizeUaPlugin({ makeWindows: false }));
 
   const browser = await puppeteer.launch({
